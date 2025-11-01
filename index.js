@@ -1,5 +1,5 @@
 require('dotenv').config();
-const { Client, GatewayIntentBits, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, PermissionFlagsBits, ChannelType, REST, Routes } = require('discord.js');
+const { Client, GatewayIntentBits, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, StringSelectMenuBuilder, StringSelectMenuOptionBuilder, PermissionFlagsBits, ChannelType, REST, Routes } = require('discord.js');
 const express = require('express');
 const fs = require('fs');
 const path = require('path');
@@ -101,6 +101,132 @@ const commands = [
                 channel_types: [ChannelType.GuildText]
             }
         ]
+    },
+    {
+        name: 'add_cargo',
+        description: 'Adiciona um cargo de suporte ao sistema de tickets',
+        options: [
+            {
+                name: 'cargo',
+                description: 'Cargo que terá acesso aos tickets',
+                type: 8,
+                required: true
+            }
+        ]
+    },
+    {
+        name: 'remove_cargo',
+        description: 'Remove um cargo de suporte do sistema',
+        options: [
+            {
+                name: 'cargo',
+                description: 'Cargo a ser removido',
+                type: 8,
+                required: true
+            }
+        ]
+    },
+    {
+        name: 'list_cargos',
+        description: 'Lista todos os cargos de suporte configurados'
+    },
+    {
+        name: 'add_button',
+        description: 'Adiciona um botão personalizado ao painel de tickets',
+        options: [
+            {
+                name: 'label',
+                description: 'Texto que aparece no botão',
+                type: 3,
+                required: true
+            },
+            {
+                name: 'emoji',
+                description: 'Emoji do botão (ex: 🎫 ou <:nome:id>)',
+                type: 3,
+                required: false
+            },
+            {
+                name: 'cor',
+                description: 'Cor do botão',
+                type: 3,
+                required: false,
+                choices: [
+                    { name: 'Azul', value: 'Primary' },
+                    { name: 'Cinza', value: 'Secondary' },
+                    { name: 'Verde', value: 'Success' },
+                    { name: 'Vermelho', value: 'Danger' }
+                ]
+            }
+        ]
+    },
+    {
+        name: 'remove_button',
+        description: 'Remove um botão do painel de tickets',
+        options: [
+            {
+                name: 'label',
+                description: 'Label do botão a ser removido',
+                type: 3,
+                required: true
+            }
+        ]
+    },
+    {
+        name: 'list_buttons',
+        description: 'Lista todos os botões configurados no painel'
+    },
+    {
+        name: 'set_select',
+        description: 'Configura select menu com setores/departamentos',
+        options: [
+            {
+                name: 'ativo',
+                description: 'Ativar ou desativar select menu',
+                type: 5,
+                required: true
+            }
+        ]
+    },
+    {
+        name: 'add_setor',
+        description: 'Adiciona um setor ao select menu',
+        options: [
+            {
+                name: 'nome',
+                description: 'Nome do setor (ex: Suporte, Vendas, Financeiro)',
+                type: 3,
+                required: true
+            },
+            {
+                name: 'descricao',
+                description: 'Descrição do setor',
+                type: 3,
+                required: true
+            },
+            {
+                name: 'emoji',
+                description: 'Emoji do setor',
+                type: 3,
+                required: false
+            }
+        ]
+    },
+    {
+        name: 'remove_setor',
+        description: 'Remove um setor do select menu',
+        options: [
+            {
+                name: 'nome',
+                description: 'Nome do setor a ser removido',
+                type: 3,
+                required: true
+            }
+        ]
+    },
+    {
+        name: 'list_setores',
+        description: 'Lista todos os setores configurados'
     }
 ];
 
@@ -155,6 +281,10 @@ client.on('interactionCreate', async interaction => {
 
             config[interaction.guildId].supportRoleId = cargo.id;
             config[interaction.guildId].categoryId = categoria.id;
+            // Inicializar novo sistema de múltiplos cargos
+            if (!config[interaction.guildId].supportRoles) {
+                config[interaction.guildId].supportRoles = [cargo.id];
+            }
             saveConfig();
 
             const embed = new EmbedBuilder()
@@ -175,6 +305,8 @@ client.on('interactionCreate', async interaction => {
                 });
             }
 
+            const guildConfig = config[interaction.guildId] || {};
+            
             const embed = new EmbedBuilder()
                 .setTitle('**Bem-vindo à Central de Atendimento!**')
                 .setDescription(
@@ -188,15 +320,64 @@ client.on('interactionCreate', async interaction => {
                 .setFooter({ text: 'Powered by STG Store' })
                 .setTimestamp();
 
-            const button = new ButtonBuilder()
-                .setCustomId('criar_ticket')
-                .setLabel('criar ticket')
-                .setEmoji('<:Ticket:1404555208847134780>')
-                .setStyle(ButtonStyle.Primary);
+            const components = [];
 
-            const row = new ActionRowBuilder().addComponents(button);
+            // Se select menu estiver ativo e tiver setores configurados
+            if (guildConfig.useSelectMenu && guildConfig.setores && guildConfig.setores.length > 0) {
+                const selectMenu = new StringSelectMenuBuilder()
+                    .setCustomId('select_setor')
+                    .setPlaceholder('Selecione um setor');
 
-            await interaction.channel.send({ embeds: [embed], components: [row] });
+                guildConfig.setores.forEach(setor => {
+                    const option = new StringSelectMenuOptionBuilder()
+                        .setLabel(setor.nome)
+                        .setDescription(setor.descricao)
+                        .setValue(setor.nome);
+                    
+                    if (setor.emoji) {
+                        option.setEmoji(setor.emoji);
+                    }
+                    
+                    selectMenu.addOptions(option);
+                });
+
+                components.push(new ActionRowBuilder().addComponents(selectMenu));
+            }
+
+            // Adicionar botões personalizados ou botão padrão
+            const buttons = [];
+            
+            if (guildConfig.customButtons && guildConfig.customButtons.length > 0) {
+                guildConfig.customButtons.forEach(btn => {
+                    const button = new ButtonBuilder()
+                        .setCustomId(`criar_ticket_${btn.label}`)
+                        .setLabel(btn.label)
+                        .setStyle(ButtonStyle[btn.style] || ButtonStyle.Primary);
+                    
+                    if (btn.emoji) {
+                        button.setEmoji(btn.emoji);
+                    }
+                    
+                    buttons.push(button);
+                });
+            } else {
+                // Botão padrão se não houver botões personalizados
+                buttons.push(
+                    new ButtonBuilder()
+                        .setCustomId('criar_ticket')
+                        .setLabel('criar ticket')
+                        .setEmoji('<:Ticket:1404555208847134780>')
+                        .setStyle(ButtonStyle.Primary)
+                );
+            }
+
+            // Dividir botões em rows (max 5 botões por row)
+            for (let i = 0; i < buttons.length; i += 5) {
+                const row = new ActionRowBuilder().addComponents(buttons.slice(i, i + 5));
+                components.push(row);
+            }
+
+            await interaction.channel.send({ embeds: [embed], components });
             return interaction.reply({ content: '✅ Painel de tickets enviado!', ephemeral: true });
         }
 
@@ -221,6 +402,283 @@ client.on('interactionCreate', async interaction => {
                 .setTitle('✅ Canal de Logs Configurado!')
                 .setDescription(`**Canal de logs configurado com sucesso!**\n\n📋 **Canal de Logs:** ${canal}`)
                 .setColor(0x00FF00)
+                .setFooter({ text: 'Powered by STG Store' })
+                .setTimestamp();
+
+            return interaction.reply({ embeds: [embed], ephemeral: true });
+        }
+
+        // Comandos de gerenciamento de cargos
+        if (interaction.commandName === 'add_cargo') {
+            if (!interaction.member.permissions.has(PermissionFlagsBits.Administrator)) {
+                return interaction.reply({ content: '❌ Você precisa ser um administrador!', ephemeral: true });
+            }
+
+            const cargo = interaction.options.getRole('cargo');
+            
+            if (!config[interaction.guildId]) {
+                config[interaction.guildId] = {};
+            }
+            if (!config[interaction.guildId].supportRoles) {
+                config[interaction.guildId].supportRoles = [];
+            }
+
+            if (config[interaction.guildId].supportRoles.includes(cargo.id)) {
+                return interaction.reply({ content: '❌ Este cargo já está configurado!', ephemeral: true });
+            }
+
+            config[interaction.guildId].supportRoles.push(cargo.id);
+            saveConfig();
+
+            const embed = new EmbedBuilder()
+                .setTitle('✅ Cargo Adicionado!')
+                .setDescription(`**Cargo de suporte adicionado com sucesso!**\n\n📌 **Cargo:** ${cargo}`)
+                .setColor(0x00FF00)
+                .setFooter({ text: 'Powered by STG Store' })
+                .setTimestamp();
+
+            return interaction.reply({ embeds: [embed], ephemeral: true });
+        }
+
+        if (interaction.commandName === 'remove_cargo') {
+            if (!interaction.member.permissions.has(PermissionFlagsBits.Administrator)) {
+                return interaction.reply({ content: '❌ Você precisa ser um administrador!', ephemeral: true });
+            }
+
+            const cargo = interaction.options.getRole('cargo');
+            
+            if (!config[interaction.guildId]?.supportRoles) {
+                return interaction.reply({ content: '❌ Nenhum cargo configurado ainda!', ephemeral: true });
+            }
+
+            const index = config[interaction.guildId].supportRoles.indexOf(cargo.id);
+            if (index === -1) {
+                return interaction.reply({ content: '❌ Este cargo não está na lista!', ephemeral: true });
+            }
+
+            config[interaction.guildId].supportRoles.splice(index, 1);
+            saveConfig();
+
+            const embed = new EmbedBuilder()
+                .setTitle('🗑️ Cargo Removido!')
+                .setDescription(`**Cargo removido da lista de suporte!**\n\n📌 **Cargo:** ${cargo}`)
+                .setColor(0xFF6B6B)
+                .setFooter({ text: 'Powered by STG Store' })
+                .setTimestamp();
+
+            return interaction.reply({ embeds: [embed], ephemeral: true });
+        }
+
+        if (interaction.commandName === 'list_cargos') {
+            const guildConfig = config[interaction.guildId];
+            
+            if (!guildConfig?.supportRoles || guildConfig.supportRoles.length === 0) {
+                return interaction.reply({ content: '❌ Nenhum cargo de suporte configurado!', ephemeral: true });
+            }
+
+            const cargos = guildConfig.supportRoles.map(roleId => {
+                const role = interaction.guild.roles.cache.get(roleId);
+                return role ? `• ${role}` : `• ID: ${roleId} (cargo não encontrado)`;
+            }).join('\n');
+
+            const embed = new EmbedBuilder()
+                .setTitle('📋 Cargos de Suporte Configurados')
+                .setDescription(cargos)
+                .setColor(0x0099FF)
+                .setFooter({ text: 'Powered by STG Store' })
+                .setTimestamp();
+
+            return interaction.reply({ embeds: [embed], ephemeral: true });
+        }
+
+        // Comandos de gerenciamento de botões
+        if (interaction.commandName === 'add_button') {
+            if (!interaction.member.permissions.has(PermissionFlagsBits.Administrator)) {
+                return interaction.reply({ content: '❌ Você precisa ser um administrador!', ephemeral: true });
+            }
+
+            const label = interaction.options.getString('label');
+            const emoji = interaction.options.getString('emoji');
+            const cor = interaction.options.getString('cor') || 'Primary';
+
+            if (!config[interaction.guildId]) {
+                config[interaction.guildId] = {};
+            }
+            if (!config[interaction.guildId].customButtons) {
+                config[interaction.guildId].customButtons = [];
+            }
+
+            if (config[interaction.guildId].customButtons.some(btn => btn.label === label)) {
+                return interaction.reply({ content: '❌ Já existe um botão com esse label!', ephemeral: true });
+            }
+
+            config[interaction.guildId].customButtons.push({ label, emoji, style: cor });
+            saveConfig();
+
+            const embed = new EmbedBuilder()
+                .setTitle('✅ Botão Adicionado!')
+                .setDescription(`**Botão adicionado ao painel!**\n\n🏷️ **Label:** ${label}\n${emoji ? `😀 **Emoji:** ${emoji}\n` : ''}🎨 **Cor:** ${cor}`)
+                .setColor(0x00FF00)
+                .setFooter({ text: 'Powered by STG Store' })
+                .setTimestamp();
+
+            return interaction.reply({ embeds: [embed], ephemeral: true });
+        }
+
+        if (interaction.commandName === 'remove_button') {
+            if (!interaction.member.permissions.has(PermissionFlagsBits.Administrator)) {
+                return interaction.reply({ content: '❌ Você precisa ser um administrador!', ephemeral: true });
+            }
+
+            const label = interaction.options.getString('label');
+            
+            if (!config[interaction.guildId]?.customButtons) {
+                return interaction.reply({ content: '❌ Nenhum botão configurado ainda!', ephemeral: true });
+            }
+
+            const index = config[interaction.guildId].customButtons.findIndex(btn => btn.label === label);
+            if (index === -1) {
+                return interaction.reply({ content: '❌ Botão não encontrado!', ephemeral: true });
+            }
+
+            config[interaction.guildId].customButtons.splice(index, 1);
+            saveConfig();
+
+            const embed = new EmbedBuilder()
+                .setTitle('🗑️ Botão Removido!')
+                .setDescription(`**Botão removido do painel!**\n\n🏷️ **Label:** ${label}`)
+                .setColor(0xFF6B6B)
+                .setFooter({ text: 'Powered by STG Store' })
+                .setTimestamp();
+
+            return interaction.reply({ embeds: [embed], ephemeral: true });
+        }
+
+        if (interaction.commandName === 'list_buttons') {
+            const guildConfig = config[interaction.guildId];
+            
+            if (!guildConfig?.customButtons || guildConfig.customButtons.length === 0) {
+                return interaction.reply({ content: '❌ Nenhum botão personalizado configurado!', ephemeral: true });
+            }
+
+            const botoes = guildConfig.customButtons.map((btn, i) => 
+                `${i + 1}. **${btn.label}** ${btn.emoji || ''} - Cor: ${btn.style}`
+            ).join('\n');
+
+            const embed = new EmbedBuilder()
+                .setTitle('🔘 Botões Configurados')
+                .setDescription(botoes)
+                .setColor(0x0099FF)
+                .setFooter({ text: 'Powered by STG Store' })
+                .setTimestamp();
+
+            return interaction.reply({ embeds: [embed], ephemeral: true });
+        }
+
+        // Comandos de select menu
+        if (interaction.commandName === 'set_select') {
+            if (!interaction.member.permissions.has(PermissionFlagsBits.Administrator)) {
+                return interaction.reply({ content: '❌ Você precisa ser um administrador!', ephemeral: true });
+            }
+
+            const ativo = interaction.options.getBoolean('ativo');
+
+            if (!config[interaction.guildId]) {
+                config[interaction.guildId] = {};
+            }
+
+            config[interaction.guildId].useSelectMenu = ativo;
+            saveConfig();
+
+            const embed = new EmbedBuilder()
+                .setTitle(ativo ? '✅ Select Menu Ativado!' : '❌ Select Menu Desativado!')
+                .setDescription(ativo ? 
+                    'O painel de tickets agora usará um select menu para escolher setores.' :
+                    'O painel de tickets voltará a usar apenas botões.')
+                .setColor(ativo ? 0x00FF00 : 0xFF6B6B)
+                .setFooter({ text: 'Powered by STG Store' })
+                .setTimestamp();
+
+            return interaction.reply({ embeds: [embed], ephemeral: true });
+        }
+
+        if (interaction.commandName === 'add_setor') {
+            if (!interaction.member.permissions.has(PermissionFlagsBits.Administrator)) {
+                return interaction.reply({ content: '❌ Você precisa ser um administrador!', ephemeral: true });
+            }
+
+            const nome = interaction.options.getString('nome');
+            const descricao = interaction.options.getString('descricao');
+            const emoji = interaction.options.getString('emoji');
+
+            if (!config[interaction.guildId]) {
+                config[interaction.guildId] = {};
+            }
+            if (!config[interaction.guildId].setores) {
+                config[interaction.guildId].setores = [];
+            }
+
+            if (config[interaction.guildId].setores.some(s => s.nome === nome)) {
+                return interaction.reply({ content: '❌ Já existe um setor com esse nome!', ephemeral: true });
+            }
+
+            config[interaction.guildId].setores.push({ nome, descricao, emoji });
+            saveConfig();
+
+            const embed = new EmbedBuilder()
+                .setTitle('✅ Setor Adicionado!')
+                .setDescription(`**Setor adicionado ao select menu!**\n\n📌 **Nome:** ${nome}\n📝 **Descrição:** ${descricao}${emoji ? `\n😀 **Emoji:** ${emoji}` : ''}`)
+                .setColor(0x00FF00)
+                .setFooter({ text: 'Powered by STG Store' })
+                .setTimestamp();
+
+            return interaction.reply({ embeds: [embed], ephemeral: true });
+        }
+
+        if (interaction.commandName === 'remove_setor') {
+            if (!interaction.member.permissions.has(PermissionFlagsBits.Administrator)) {
+                return interaction.reply({ content: '❌ Você precisa ser um administrador!', ephemeral: true });
+            }
+
+            const nome = interaction.options.getString('nome');
+            
+            if (!config[interaction.guildId]?.setores) {
+                return interaction.reply({ content: '❌ Nenhum setor configurado ainda!', ephemeral: true });
+            }
+
+            const index = config[interaction.guildId].setores.findIndex(s => s.nome === nome);
+            if (index === -1) {
+                return interaction.reply({ content: '❌ Setor não encontrado!', ephemeral: true });
+            }
+
+            config[interaction.guildId].setores.splice(index, 1);
+            saveConfig();
+
+            const embed = new EmbedBuilder()
+                .setTitle('🗑️ Setor Removido!')
+                .setDescription(`**Setor removido do select menu!**\n\n📌 **Nome:** ${nome}`)
+                .setColor(0xFF6B6B)
+                .setFooter({ text: 'Powered by STG Store' })
+                .setTimestamp();
+
+            return interaction.reply({ embeds: [embed], ephemeral: true });
+        }
+
+        if (interaction.commandName === 'list_setores') {
+            const guildConfig = config[interaction.guildId];
+            
+            if (!guildConfig?.setores || guildConfig.setores.length === 0) {
+                return interaction.reply({ content: '❌ Nenhum setor configurado ainda!', ephemeral: true });
+            }
+
+            const setores = guildConfig.setores.map((s, i) => 
+                `${i + 1}. ${s.emoji || '📌'} **${s.nome}** - ${s.descricao}`
+            ).join('\n');
+
+            const embed = new EmbedBuilder()
+                .setTitle('📂 Setores Configurados')
+                .setDescription(setores)
+                .setColor(0x0099FF)
                 .setFooter({ text: 'Powered by STG Store' })
                 .setTimestamp();
 
