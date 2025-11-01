@@ -307,77 +307,46 @@ client.on('interactionCreate', async interaction => {
 
             const guildConfig = config[interaction.guildId] || {};
             
+            if (!guildConfig.setores || guildConfig.setores.length === 0) {
+                return interaction.reply({ 
+                    content: '❌ Nenhum setor configurado! Use `/add_setor` para adicionar setores ao menu.', 
+                    ephemeral: true 
+                });
+            }
+
             const embed = new EmbedBuilder()
                 .setTitle('**Bem-vindo à Central de Atendimento!**')
                 .setDescription(
-                    '**Para que possamos iniciar o seu atendimento, Escolha um setor na barra de seleção abaixo e clique no botão correspondente à área desejado.**\n\n' +
+                    '**Para que possamos iniciar o seu atendimento, selecione o setor desejado no menu abaixo.**\n\n' +
                     '**H͟o͟r͟á͟r͟i͟o͟ ͟d͟e͟ ͟A͟t͟e͟n͟d͟i͟m͟e͟n͟t͟o͟:**\n\n' +
                     '> Segunda a Sexta\n8:00h as 22:30h\n\n' +
                     '> Sábado e Domingo\n7:00h as 21:30h\n\n' +
-                    '> **Caso envie mensagens fora do horário de atendimento, aguarde. Assim que um staff estiver disponível, ira le atende com o setor de atendimento selecionado. Por favor, evite menções e abrir ticket atoa sem precisar de suporte.**'
+                    '> **Caso envie mensagens fora do horário de atendimento, aguarde. Assim que um staff estiver disponível, irá lhe atender com o setor de atendimento selecionado. Por favor, evite menções e abrir ticket à toa sem precisar de suporte.**'
                 )
                 .setColor(0x0099FF)
                 .setFooter({ text: 'Powered by STG Store' })
                 .setTimestamp();
 
-            const components = [];
+            const selectMenu = new StringSelectMenuBuilder()
+                .setCustomId('select_setor')
+                .setPlaceholder('🎯 Selecione um setor para abrir ticket');
 
-            // Se select menu estiver ativo e tiver setores configurados
-            if (guildConfig.useSelectMenu && guildConfig.setores && guildConfig.setores.length > 0) {
-                const selectMenu = new StringSelectMenuBuilder()
-                    .setCustomId('select_setor')
-                    .setPlaceholder('Selecione um setor');
+            guildConfig.setores.forEach(setor => {
+                const option = new StringSelectMenuOptionBuilder()
+                    .setLabel(setor.nome)
+                    .setDescription(setor.descricao)
+                    .setValue(setor.nome);
+                
+                if (setor.emoji) {
+                    option.setEmoji(setor.emoji);
+                }
+                
+                selectMenu.addOptions(option);
+            });
 
-                guildConfig.setores.forEach(setor => {
-                    const option = new StringSelectMenuOptionBuilder()
-                        .setLabel(setor.nome)
-                        .setDescription(setor.descricao)
-                        .setValue(setor.nome);
-                    
-                    if (setor.emoji) {
-                        option.setEmoji(setor.emoji);
-                    }
-                    
-                    selectMenu.addOptions(option);
-                });
+            const row = new ActionRowBuilder().addComponents(selectMenu);
 
-                components.push(new ActionRowBuilder().addComponents(selectMenu));
-            }
-
-            // Adicionar botões personalizados ou botão padrão
-            const buttons = [];
-            
-            if (guildConfig.customButtons && guildConfig.customButtons.length > 0) {
-                guildConfig.customButtons.forEach(btn => {
-                    const button = new ButtonBuilder()
-                        .setCustomId(`criar_ticket_${btn.label}`)
-                        .setLabel(btn.label)
-                        .setStyle(ButtonStyle[btn.style] || ButtonStyle.Primary);
-                    
-                    if (btn.emoji) {
-                        button.setEmoji(btn.emoji);
-                    }
-                    
-                    buttons.push(button);
-                });
-            } else {
-                // Botão padrão se não houver botões personalizados
-                buttons.push(
-                    new ButtonBuilder()
-                        .setCustomId('criar_ticket')
-                        .setLabel('criar ticket')
-                        .setEmoji('<:Ticket:1404555208847134780>')
-                        .setStyle(ButtonStyle.Primary)
-                );
-            }
-
-            // Dividir botões em rows (max 5 botões por row)
-            for (let i = 0; i < buttons.length; i += 5) {
-                const row = new ActionRowBuilder().addComponents(buttons.slice(i, i + 5));
-                components.push(row);
-            }
-
-            await interaction.channel.send({ embeds: [embed], components });
+            await interaction.channel.send({ embeds: [embed], components: [row] });
             return interaction.reply({ content: '✅ Painel de tickets enviado!', ephemeral: true });
         }
 
@@ -954,6 +923,140 @@ client.on('interactionCreate', async interaction => {
                     console.error('❌ Erro ao deletar canal:', err);
                 });
             }, 5000);
+        }
+    }
+
+    if (interaction.isStringSelectMenu()) {
+        if (interaction.customId === 'select_setor') {
+            const guildConfig = config[interaction.guildId];
+
+            if (!guildConfig || !guildConfig.supportRoleId || !guildConfig.categoryId) {
+                return interaction.reply({ 
+                    content: '❌ O sistema de tickets não foi configurado! Peça a um administrador para usar `/setup`.', 
+                    ephemeral: true 
+                });
+            }
+
+            const setorSelecionado = interaction.values[0];
+            const ticketChannelName = `ticket-${interaction.user.id}`;
+            
+            const existingChannel = interaction.guild.channels.cache.find(
+                ch => ch.name === ticketChannelName && ch.type === ChannelType.GuildText
+            );
+
+            if (existingChannel) {
+                return interaction.reply({ 
+                    content: `❌ Você já tem um ticket aberto: ${existingChannel}`, 
+                    ephemeral: true 
+                });
+            }
+
+            await interaction.reply({ 
+                content: `🎫 Criando seu ticket no setor **${setorSelecionado}**...`, 
+                ephemeral: true 
+            });
+
+            try {
+                const permissionOverwrites = [
+                    {
+                        id: interaction.guild.roles.everyone.id,
+                        deny: [PermissionFlagsBits.ViewChannel]
+                    },
+                    {
+                        id: interaction.user.id,
+                        allow: [
+                            PermissionFlagsBits.ViewChannel, 
+                            PermissionFlagsBits.SendMessages, 
+                            PermissionFlagsBits.ReadMessageHistory
+                        ]
+                    }
+                ];
+
+                if (guildConfig.supportRoles && guildConfig.supportRoles.length > 0) {
+                    guildConfig.supportRoles.forEach(roleId => {
+                        permissionOverwrites.push({
+                            id: roleId,
+                            allow: [
+                                PermissionFlagsBits.ViewChannel, 
+                                PermissionFlagsBits.SendMessages, 
+                                PermissionFlagsBits.ReadMessageHistory
+                            ]
+                        });
+                    });
+                } else if (guildConfig.supportRoleId) {
+                    permissionOverwrites.push({
+                        id: guildConfig.supportRoleId,
+                        allow: [
+                            PermissionFlagsBits.ViewChannel, 
+                            PermissionFlagsBits.SendMessages, 
+                            PermissionFlagsBits.ReadMessageHistory
+                        ]
+                    });
+                }
+
+                const ticketChannel = await interaction.guild.channels.create({
+                    name: ticketChannelName,
+                    type: ChannelType.GuildText,
+                    parent: guildConfig.categoryId,
+                    permissionOverwrites: permissionOverwrites
+                });
+
+                const ticketEmbed = new EmbedBuilder()
+                    .setTitle('🎫 Ticket Aberto')
+                    .setDescription(`Olá ${interaction.user}, bem-vindo ao seu ticket!\n\n**Setor selecionado:** ${setorSelecionado}\n\nUm membro da equipe de suporte irá atendê-lo em breve.\n\n**Para fechar ou reivindicar este ticket, clique nos botões abaixo.**`)
+                    .setColor(0x00FF00)
+                    .setFooter({ text: 'Powered by STG Store' })
+                    .setTimestamp();
+
+                const claimButton = new ButtonBuilder()
+                    .setCustomId('reivindicar_ticket')
+                    .setLabel('Reivindicar Ticket')
+                    .setEmoji('✋')
+                    .setStyle(ButtonStyle.Success);
+
+                const closeButton = new ButtonBuilder()
+                    .setCustomId('fechar_ticket')
+                    .setLabel('Fechar Ticket')
+                    .setEmoji('🔒')
+                    .setStyle(ButtonStyle.Danger);
+
+                const row = new ActionRowBuilder().addComponents(claimButton, closeButton);
+
+                const mentionRoles = guildConfig.supportRoles && guildConfig.supportRoles.length > 0
+                    ? guildConfig.supportRoles.map(roleId => `<@&${roleId}>`).join(' ')
+                    : `<@&${guildConfig.supportRoleId}>`;
+
+                await ticketChannel.send({ 
+                    content: `${interaction.user} | ${mentionRoles}`,
+                    embeds: [ticketEmbed], 
+                    components: [row] 
+                });
+
+                console.log(`✅ Ticket criado: ${ticketChannelName} por ${interaction.user.tag} - Setor: ${setorSelecionado}`);
+
+                if (guildConfig.logsChannelId) {
+                    const logsChannel = interaction.guild.channels.cache.get(guildConfig.logsChannelId);
+                    if (logsChannel) {
+                        const logEmbed = new EmbedBuilder()
+                            .setTitle('📂 Ticket Aberto')
+                            .setDescription(`**Usuário:** ${interaction.user} (${interaction.user.tag})\n**ID:** ${interaction.user.id}\n**Setor:** ${setorSelecionado}\n**Canal:** ${ticketChannel}\n**Horário:** <t:${Math.floor(Date.now() / 1000)}:F>`)
+                            .setColor(0x00FF00)
+                            .setFooter({ text: 'Powered by STG Store' })
+                            .setTimestamp();
+                        
+                        await logsChannel.send({ embeds: [logEmbed] }).catch(err => {
+                            console.error('❌ Erro ao enviar log de ticket aberto:', err);
+                        });
+                    }
+                }
+
+            } catch (error) {
+                console.error('❌ Erro ao criar ticket:', error);
+                return interaction.followUp({ 
+                    content: '❌ Erro ao criar o ticket. Verifique as permissões do bot.', 
+                    ephemeral: true 
+                });
+            }
         }
     }
 });
