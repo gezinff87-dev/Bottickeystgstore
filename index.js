@@ -309,7 +309,7 @@ client.on('interactionCreate', async interaction => {
             
             if (!guildConfig.setores || guildConfig.setores.length === 0) {
                 return interaction.reply({ 
-                    content: '❌ Nenhum setor configurado! Use `/add_setor` para adicionar setores ao menu.', 
+                    content: '❌ nada configurado! Use `/add_setor` para adicionar setores ao menu.', 
                     ephemeral: true 
                 });
             }
@@ -329,7 +329,7 @@ client.on('interactionCreate', async interaction => {
 
             const selectMenu = new StringSelectMenuBuilder()
                 .setCustomId('select_setor')
-                .setPlaceholder('🎯 Selecione um setor para abrir ticket');
+                .setPlaceholder('Selecione uma opção para abrir ticket');
 
             guildConfig.setores.forEach(setor => {
                 const option = new StringSelectMenuOptionBuilder()
