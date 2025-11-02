@@ -318,6 +318,82 @@ const commands = [
     {
         name: 'list_setores',
         description: 'Lista todos os setores do painel selecionado'
+    },
+    {
+        name: 'edit_titulo',
+        description: 'Edita o título do painel selecionado',
+        options: [
+            {
+                name: 'titulo',
+                description: 'Novo título do painel',
+                type: 3,
+                required: true
+            }
+        ]
+    },
+    {
+        name: 'edit_descricao',
+        description: 'Edita a descrição do painel selecionado',
+        options: [
+            {
+                name: 'descricao',
+                description: 'Nova descrição do painel',
+                type: 3,
+                required: true
+            }
+        ]
+    },
+    {
+        name: 'edit_imagem',
+        description: 'Edita a imagem (banner) do painel selecionado',
+        options: [
+            {
+                name: 'url',
+                description: 'URL da imagem (deixe vazio para remover)',
+                type: 3,
+                required: false
+            }
+        ]
+    },
+    {
+        name: 'edit_thumbnail',
+        description: 'Edita a thumbnail (miniatura) do painel selecionado',
+        options: [
+            {
+                name: 'url',
+                description: 'URL da thumbnail (deixe vazio para remover)',
+                type: 3,
+                required: false
+            }
+        ]
+    },
+    {
+        name: 'edit_footer',
+        description: 'Edita o rodapé do painel selecionado',
+        options: [
+            {
+                name: 'texto',
+                description: 'Texto do rodapé',
+                type: 3,
+                required: false
+            }
+        ]
+    },
+    {
+        name: 'edit_color',
+        description: 'Edita a cor da borda do embed do painel selecionado',
+        options: [
+            {
+                name: 'cor',
+                description: 'Cor em hexadecimal (ex: #0099FF) ou nome de cor',
+                type: 3,
+                required: true
+            }
+        ]
+    },
+    {
+        name: 'ver_personalizacao',
+        description: 'Visualiza as configurações de personalização do painel selecionado'
     }
 ];
 
@@ -480,19 +556,34 @@ client.on('interactionCreate', async interaction => {
                 });
             }
 
+            const custom = panelConfig.customization || {};
+            
+            const defaultTitle = `**${panelConfig.name}**`;
+            const defaultDescription = '**Para que possamos iniciar o seu atendimento, selecione o setor desejado no menu abaixo.**\n\n' +
+                '**H͟o͟r͟á͟r͟i͟o͟ ͟d͟e͟ ͟A͟t͟e͟n͟d͟i͟m͟e͟n͟t͟o͟:**\n\n' +
+                '> Segunda a Sexta\n8:00h as 22:30h\n\n' +
+                '> Sábado e Domingo\n7:00h as 21:30h\n\n' +
+                '> **Caso envie mensagens fora do horário de atendimento, aguarde. Assim que um staff estiver disponível, irá lhe atender com o setor de atendimento selecionado. Por favor, evite menções e abrir ticket à toa sem precisar de suporte.**';
+            const defaultImage = "https://i.postimg.cc/cCfQFsxF/standard-14.gif";
+
             const embed = new EmbedBuilder()
-                .setTitle(`**${panelConfig.name}**`)
-                .setDescription(
-                    '**Para que possamos iniciar o seu atendimento, selecione o setor desejado no menu abaixo.**\n\n' +
-                    '**H͟o͟r͟á͟r͟i͟o͟ ͟d͟e͟ ͟A͟t͟e͟n͟d͟i͟m͟e͟n͟t͟o͟:**\n\n' +
-                    '> Segunda a Sexta\n8:00h as 22:30h\n\n' +
-                    '> Sábado e Domingo\n7:00h as 21:30h\n\n' +
-                    '> **Caso envie mensagens fora do horário de atendimento, aguarde. Assim que um staff estiver disponível, irá lhe atender com o setor de atendimento selecionado. Por favor, evite menções e abrir ticket à toa sem precisar de suporte.**'
-                )
-                .setColor(0x0099FF)
-                .setFooter({ text: 'Powered by STG Store' })
-                .setImage("https://i.postimg.cc/cCfQFsxF/standard-14.gif")
+                .setTitle(custom.title || defaultTitle)
+                .setDescription(custom.description || defaultDescription)
+                .setColor(custom.color !== undefined ? custom.color : 0x0099FF)
+                .setFooter({ text: custom.footer || 'Powered by STG Store' })
                 .setTimestamp();
+
+            if (custom.image !== undefined) {
+                if (custom.image) {
+                    embed.setImage(custom.image);
+                }
+            } else {
+                embed.setImage(defaultImage);
+            }
+
+            if (custom.thumbnail) {
+                embed.setThumbnail(custom.thumbnail);
+            }
 
             const selectMenu = new StringSelectMenuBuilder()
                 .setCustomId(`select_setor:${panelId}`)
@@ -560,7 +651,9 @@ client.on('interactionCreate', async interaction => {
         const commandsRequiringPanel = [
             'setup', 'logs', 'add_cargo', 'remove_cargo', 'list_cargos',
             'add_button', 'remove_button', 'list_buttons',
-            'add_setor', 'remove_setor', 'list_setores'
+            'add_setor', 'remove_setor', 'list_setores',
+            'edit_titulo', 'edit_descricao', 'edit_imagem', 'edit_thumbnail', 
+            'edit_footer', 'edit_color', 'ver_personalizacao'
         ];
 
         if (commandsRequiringPanel.includes(interaction.commandName)) {
@@ -864,6 +957,228 @@ client.on('interactionCreate', async interaction => {
                     .setColor(0x0099FF)
                     .setFooter({ text: 'Powered by STG Store' })
                     .setTimestamp();
+
+                return interaction.reply({ embeds: [embed], ephemeral: true });
+            }
+
+            // ========== COMANDOS DE PERSONALIZAÇÃO ==========
+
+            if (interaction.commandName === 'edit_titulo') {
+                if (!interaction.member.permissions.has(PermissionFlagsBits.Administrator)) {
+                    return interaction.reply({ content: '❌ Você precisa ser um administrador!', ephemeral: true });
+                }
+
+                const titulo = interaction.options.getString('titulo');
+                
+                if (!panelConfig.customization) {
+                    panelConfig.customization = {};
+                }
+                
+                panelConfig.customization.title = titulo;
+                saveConfig();
+
+                const embed = new EmbedBuilder()
+                    .setTitle('✅ Título Atualizado!')
+                    .setDescription(`**Novo título do painel "${panelConfig.name}":**\n\n${titulo}`)
+                    .setColor(0x00FF00)
+                    .setFooter({ text: 'Powered by STG Store' })
+                    .setTimestamp();
+
+                return interaction.reply({ embeds: [embed], ephemeral: true });
+            }
+
+            if (interaction.commandName === 'edit_descricao') {
+                if (!interaction.member.permissions.has(PermissionFlagsBits.Administrator)) {
+                    return interaction.reply({ content: '❌ Você precisa ser um administrador!', ephemeral: true });
+                }
+
+                const descricao = interaction.options.getString('descricao');
+                
+                if (!panelConfig.customization) {
+                    panelConfig.customization = {};
+                }
+                
+                panelConfig.customization.description = descricao;
+                saveConfig();
+
+                const embed = new EmbedBuilder()
+                    .setTitle('✅ Descrição Atualizada!')
+                    .setDescription(`**Nova descrição configurada para o painel "${panelConfig.name}"!**`)
+                    .setColor(0x00FF00)
+                    .setFooter({ text: 'Powered by STG Store' })
+                    .setTimestamp();
+
+                return interaction.reply({ embeds: [embed], ephemeral: true });
+            }
+
+            if (interaction.commandName === 'edit_imagem') {
+                if (!interaction.member.permissions.has(PermissionFlagsBits.Administrator)) {
+                    return interaction.reply({ content: '❌ Você precisa ser um administrador!', ephemeral: true });
+                }
+
+                const url = interaction.options.getString('url');
+                
+                if (!panelConfig.customization) {
+                    panelConfig.customization = {};
+                }
+                
+                if (url) {
+                    panelConfig.customization.image = url;
+                } else {
+                    delete panelConfig.customization.image;
+                }
+                saveConfig();
+
+                const embed = new EmbedBuilder()
+                    .setTitle(url ? '✅ Imagem Atualizada!' : '🗑️ Imagem Removida!')
+                    .setDescription(url ? 
+                        `**Imagem do painel "${panelConfig.name}" atualizada!**\n\n📷 URL: ${url}` :
+                        `**Imagem removida do painel "${panelConfig.name}".**`)
+                    .setColor(url ? 0x00FF00 : 0xFF6B6B)
+                    .setFooter({ text: 'Powered by STG Store' })
+                    .setTimestamp();
+
+                return interaction.reply({ embeds: [embed], ephemeral: true });
+            }
+
+            if (interaction.commandName === 'edit_thumbnail') {
+                if (!interaction.member.permissions.has(PermissionFlagsBits.Administrator)) {
+                    return interaction.reply({ content: '❌ Você precisa ser um administrador!', ephemeral: true });
+                }
+
+                const url = interaction.options.getString('url');
+                
+                if (!panelConfig.customization) {
+                    panelConfig.customization = {};
+                }
+                
+                if (url) {
+                    panelConfig.customization.thumbnail = url;
+                } else {
+                    delete panelConfig.customization.thumbnail;
+                }
+                saveConfig();
+
+                const embed = new EmbedBuilder()
+                    .setTitle(url ? '✅ Thumbnail Atualizada!' : '🗑️ Thumbnail Removida!')
+                    .setDescription(url ? 
+                        `**Thumbnail do painel "${panelConfig.name}" atualizada!**\n\n📷 URL: ${url}` :
+                        `**Thumbnail removida do painel "${panelConfig.name}".**`)
+                    .setColor(url ? 0x00FF00 : 0xFF6B6B)
+                    .setFooter({ text: 'Powered by STG Store' })
+                    .setTimestamp();
+
+                return interaction.reply({ embeds: [embed], ephemeral: true });
+            }
+
+            if (interaction.commandName === 'edit_footer') {
+                if (!interaction.member.permissions.has(PermissionFlagsBits.Administrator)) {
+                    return interaction.reply({ content: '❌ Você precisa ser um administrador!', ephemeral: true });
+                }
+
+                const texto = interaction.options.getString('texto');
+                
+                if (!panelConfig.customization) {
+                    panelConfig.customization = {};
+                }
+                
+                if (texto) {
+                    panelConfig.customization.footer = texto;
+                } else {
+                    delete panelConfig.customization.footer;
+                }
+                saveConfig();
+
+                const embed = new EmbedBuilder()
+                    .setTitle(texto ? '✅ Rodapé Atualizado!' : '🗑️ Rodapé Removido!')
+                    .setDescription(texto ? 
+                        `**Rodapé do painel "${panelConfig.name}" atualizado!**\n\n📝 Texto: ${texto}` :
+                        `**Rodapé removido do painel "${panelConfig.name}".**`)
+                    .setColor(texto ? 0x00FF00 : 0xFF6B6B)
+                    .setFooter({ text: 'Powered by STG Store' })
+                    .setTimestamp();
+
+                return interaction.reply({ embeds: [embed], ephemeral: true });
+            }
+
+            if (interaction.commandName === 'edit_color') {
+                if (!interaction.member.permissions.has(PermissionFlagsBits.Administrator)) {
+                    return interaction.reply({ content: '❌ Você precisa ser um administrador!', ephemeral: true });
+                }
+
+                let cor = interaction.options.getString('cor');
+                
+                // Converter hex para número
+                let colorValue;
+                if (cor.startsWith('#')) {
+                    colorValue = parseInt(cor.substring(1), 16);
+                } else if (cor.startsWith('0x')) {
+                    colorValue = parseInt(cor, 16);
+                } else {
+                    // Cores nomeadas comuns
+                    const namedColors = {
+                        'vermelho': 0xFF0000, 'red': 0xFF0000,
+                        'verde': 0x00FF00, 'green': 0x00FF00,
+                        'azul': 0x0099FF, 'blue': 0x0099FF,
+                        'amarelo': 0xFFFF00, 'yellow': 0xFFFF00,
+                        'roxo': 0x9B59B6, 'purple': 0x9B59B6,
+                        'laranja': 0xFF9900, 'orange': 0xFF9900,
+                        'rosa': 0xFF69B4, 'pink': 0xFF69B4,
+                        'preto': 0x000000, 'black': 0x000000,
+                        'branco': 0xFFFFFF, 'white': 0xFFFFFF,
+                        'cinza': 0x808080, 'gray': 0x808080
+                    };
+                    colorValue = namedColors[cor.toLowerCase()];
+                }
+
+                if (colorValue === undefined || isNaN(colorValue)) {
+                    return interaction.reply({ 
+                        content: '❌ Cor inválida! Use formato hexadecimal (#0099FF ou 0x0099FF) ou nome de cor (vermelho, verde, azul, etc).', 
+                        ephemeral: true 
+                    });
+                }
+                
+                if (!panelConfig.customization) {
+                    panelConfig.customization = {};
+                }
+                
+                panelConfig.customization.color = colorValue;
+                saveConfig();
+
+                const embed = new EmbedBuilder()
+                    .setTitle('✅ Cor Atualizada!')
+                    .setDescription(`**Cor da borda do painel "${panelConfig.name}" atualizada!**`)
+                    .setColor(colorValue)
+                    .setFooter({ text: 'Powered by STG Store' })
+                    .setTimestamp();
+
+                return interaction.reply({ embeds: [embed], ephemeral: true });
+            }
+
+            if (interaction.commandName === 'ver_personalizacao') {
+                const custom = panelConfig.customization || {};
+                
+                const info = [
+                    `**Painel:** ${panelConfig.name}`,
+                    '',
+                    `📝 **Título:** ${custom.title || 'Padrão'}`,
+                    `📄 **Descrição:** ${custom.description ? 'Personalizada ✓' : 'Padrão'}`,
+                    `🎨 **Cor:** ${custom.color !== undefined ? `#${custom.color.toString(16).padStart(6, '0').toUpperCase()}` : 'Padrão (#0099FF)'}`,
+                    `🖼️ **Imagem:** ${custom.image || 'Padrão'}`,
+                    `🖼️ **Thumbnail:** ${custom.thumbnail || 'Nenhuma'}`,
+                    `📌 **Rodapé:** ${custom.footer || 'Padrão (Powered by STG Store)'}`
+                ].join('\n');
+
+                const embed = new EmbedBuilder()
+                    .setTitle('🎨 Personalização do Painel')
+                    .setDescription(info)
+                    .setColor(custom.color || 0x0099FF)
+                    .setFooter({ text: 'Powered by STG Store' })
+                    .setTimestamp();
+
+                if (custom.thumbnail) {
+                    embed.setThumbnail(custom.thumbnail);
+                }
 
                 return interaction.reply({ embeds: [embed], ephemeral: true });
             }
