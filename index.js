@@ -106,6 +106,16 @@ const commands = [
                 description: 'Nome do painel (ex: Suporte, Vendas, VIP)',
                 type: 3,
                 required: true
+            },
+            {
+                name: 'tipo',
+                description: 'Tipo de interface do painel',
+                type: 3,
+                required: false,
+                choices: [
+                    { name: 'Select Menu (Menu Dropdown)', value: 'select_menu' },
+                    { name: 'Botões', value: 'buttons' }
+                ]
             }
         ]
     },
@@ -394,6 +404,22 @@ const commands = [
     {
         name: 'ver_personalizacao',
         description: 'Visualiza as configurações de personalização do painel selecionado'
+    },
+    {
+        name: 'set_tipo_painel',
+        description: 'Define o tipo de interface do painel (select menu ou botões)',
+        options: [
+            {
+                name: 'tipo',
+                description: 'Tipo de interface',
+                type: 3,
+                required: true,
+                choices: [
+                    { name: 'Select Menu (Menu Dropdown)', value: 'select_menu' },
+                    { name: 'Botões', value: 'buttons' }
+                ]
+            }
+        ]
     }
 ];
 
@@ -442,6 +468,7 @@ client.on('interactionCreate', async interaction => {
             }
 
             const nome = interaction.options.getString('nome');
+            const tipo = interaction.options.getString('tipo') || 'select_menu';
             const panelId = sanitizePanelId(nome);
 
             if (!config[interaction.guildId]) {
@@ -460,6 +487,7 @@ client.on('interactionCreate', async interaction => {
 
             config[interaction.guildId].panels[panelId] = {
                 name: nome,
+                type: tipo,
                 setores: [],
                 customButtons: [],
                 supportRoles: []
@@ -469,9 +497,10 @@ client.on('interactionCreate', async interaction => {
             // Auto-selecionar o painel recém-criado
             setSelectedPanel(interaction.user.id, interaction.guildId, panelId);
 
+            const tipoTexto = tipo === 'select_menu' ? 'Select Menu (Dropdown)' : 'Botões';
             const embed = new EmbedBuilder()
                 .setTitle('✅ Painel Criado!')
-                .setDescription(`**Painel de tickets criado com sucesso!**\n\n📋 **Nome:** ${nome}\n🆔 **ID:** \`${panelId}\`\n\n✨ Este painel foi automaticamente selecionado. Use \`/setup\` para configurá-lo.`)
+                .setDescription(`**Painel de tickets criado com sucesso!**\n\n📋 **Nome:** ${nome}\n🆔 **ID:** \`${panelId}\`\n🎛️ **Tipo:** ${tipoTexto}\n\n✨ Este painel foi automaticamente selecionado. Use \`/setup\` para configurá-lo.`)
                 .setColor(0x00FF00)
                 .setFooter({ text: 'Powered by STG Store' })
                 .setTimestamp();
@@ -549,11 +578,23 @@ client.on('interactionCreate', async interaction => {
                 });
             }
 
-            if (!panelConfig.setores || panelConfig.setores.length === 0) {
-                return interaction.reply({ 
-                    content: '❌ Este painel não tem setores configurados! Use `/selecionar_painel` e depois `/add_setor`.', 
-                    ephemeral: true 
-                });
+            const panelType = panelConfig.type || 'select_menu';
+            
+            // Validar se tem setores (para select menu) ou botões (para buttons)
+            if (panelType === 'select_menu') {
+                if (!panelConfig.setores || panelConfig.setores.length === 0) {
+                    return interaction.reply({ 
+                        content: '❌ Este painel não tem setores configurados! Use `/selecionar_painel` e depois `/add_setor`.', 
+                        ephemeral: true 
+                    });
+                }
+            } else if (panelType === 'buttons') {
+                if (!panelConfig.customButtons || panelConfig.customButtons.length === 0) {
+                    return interaction.reply({ 
+                        content: '❌ Este painel não tem botões configurados! Use `/selecionar_painel` e depois `/add_button`.', 
+                        ephemeral: true 
+                    });
+                }
             }
 
             const custom = panelConfig.customization || {};
@@ -585,26 +626,52 @@ client.on('interactionCreate', async interaction => {
                 embed.setThumbnail(custom.thumbnail);
             }
 
-            const selectMenu = new StringSelectMenuBuilder()
-                .setCustomId(`select_setor:${panelId}`)
-                .setPlaceholder('Selecione uma opção para abrir ticket');
+            const components = [];
 
-            panelConfig.setores.forEach(setor => {
-                const option = new StringSelectMenuOptionBuilder()
-                    .setLabel(setor.nome)
-                    .setDescription(setor.descricao)
-                    .setValue(setor.nome);
-                
-                if (setor.emoji) {
-                    option.setEmoji(setor.emoji);
+            if (panelType === 'select_menu') {
+                // Renderizar Select Menu
+                const selectMenu = new StringSelectMenuBuilder()
+                    .setCustomId(`select_setor:${panelId}`)
+                    .setPlaceholder('Selecione uma opção para abrir ticket');
+
+                panelConfig.setores.forEach(setor => {
+                    const option = new StringSelectMenuOptionBuilder()
+                        .setLabel(setor.nome)
+                        .setDescription(setor.descricao)
+                        .setValue(setor.nome);
+                    
+                    if (setor.emoji) {
+                        option.setEmoji(setor.emoji);
+                    }
+                    
+                    selectMenu.addOptions(option);
+                });
+
+                components.push(new ActionRowBuilder().addComponents(selectMenu));
+            } else {
+                // Renderizar Botões
+                const buttons = [];
+                panelConfig.customButtons.forEach(btn => {
+                    const button = new ButtonBuilder()
+                        .setCustomId(`create_ticket:${panelId}:${btn.label}`)
+                        .setLabel(btn.label)
+                        .setStyle(ButtonStyle[btn.style] || ButtonStyle.Primary);
+                    
+                    if (btn.emoji) {
+                        button.setEmoji(btn.emoji);
+                    }
+                    
+                    buttons.push(button);
+                });
+
+                // Discord limita 5 botões por ActionRow, então dividimos se necessário
+                for (let i = 0; i < buttons.length; i += 5) {
+                    const row = new ActionRowBuilder().addComponents(buttons.slice(i, i + 5));
+                    components.push(row);
                 }
-                
-                selectMenu.addOptions(option);
-            });
+            }
 
-            const row = new ActionRowBuilder().addComponents(selectMenu);
-
-            await interaction.channel.send({ embeds: [embed], components: [row] });
+            await interaction.channel.send({ embeds: [embed], components });
             return interaction.reply({ content: '✅ Painel de tickets enviado!', ephemeral: true });
         }
 
@@ -653,7 +720,7 @@ client.on('interactionCreate', async interaction => {
             'add_button', 'remove_button', 'list_buttons',
             'add_setor', 'remove_setor', 'list_setores',
             'edit_titulo', 'edit_descricao', 'edit_imagem', 'edit_thumbnail', 
-            'edit_footer', 'edit_color', 'ver_personalizacao'
+            'edit_footer', 'edit_color', 'ver_personalizacao', 'set_tipo_painel'
         ];
 
         if (commandsRequiringPanel.includes(interaction.commandName)) {
@@ -1157,10 +1224,12 @@ client.on('interactionCreate', async interaction => {
 
             if (interaction.commandName === 'ver_personalizacao') {
                 const custom = panelConfig.customization || {};
+                const tipoTexto = panelConfig.type === 'buttons' ? 'Botões' : 'Select Menu';
                 
                 const info = [
                     `**Painel:** ${panelConfig.name}`,
                     '',
+                    `🎛️ **Tipo:** ${tipoTexto}`,
                     `📝 **Título:** ${custom.title || 'Padrão'}`,
                     `📄 **Descrição:** ${custom.description ? 'Personalizada ✓' : 'Padrão'}`,
                     `🎨 **Cor:** ${custom.color !== undefined ? `#${custom.color.toString(16).padStart(6, '0').toUpperCase()}` : 'Padrão (#0099FF)'}`,
@@ -1179,6 +1248,26 @@ client.on('interactionCreate', async interaction => {
                 if (custom.thumbnail) {
                     embed.setThumbnail(custom.thumbnail);
                 }
+
+                return interaction.reply({ embeds: [embed], ephemeral: true });
+            }
+
+            if (interaction.commandName === 'set_tipo_painel') {
+                if (!interaction.member.permissions.has(PermissionFlagsBits.Administrator)) {
+                    return interaction.reply({ content: '❌ Você precisa ser um administrador!', ephemeral: true });
+                }
+
+                const tipo = interaction.options.getString('tipo');
+                panelConfig.type = tipo;
+                saveConfig();
+
+                const tipoTexto = tipo === 'select_menu' ? 'Select Menu (Dropdown)' : 'Botões';
+                const embed = new EmbedBuilder()
+                    .setTitle('✅ Tipo de Painel Atualizado!')
+                    .setDescription(`**O painel "${panelConfig.name}" agora usa:** ${tipoTexto}\n\n${tipo === 'buttons' ? '💡 Use \`/add_button\` para adicionar botões personalizados!' : '💡 Use \`/add_setor\` para adicionar opções ao menu!'}`)
+                    .setColor(0x00FF00)
+                    .setFooter({ text: 'Powered by STG Store' })
+                    .setTimestamp();
 
                 return interaction.reply({ embeds: [embed], ephemeral: true });
             }
@@ -1260,6 +1349,150 @@ client.on('interactionCreate', async interaction => {
     // ========== INTERAÇÕES COM BOTÕES ==========
 
     if (interaction.isButton()) {
+        
+        // Tratamento para botões personalizados de criação de ticket
+        if (interaction.customId.startsWith('create_ticket:')) {
+            const parts = interaction.customId.split(':');
+            const panelId = parts[1];
+            const buttonLabel = parts.slice(2).join(':');
+            
+            const panelConfig = getPanelConfig(interaction.guildId, panelId);
+
+            if (!panelConfig || !panelConfig.categoryId) {
+                return interaction.reply({ 
+                    content: '❌ Este painel não está configurado corretamente! Peça a um administrador para usar `/selecionar_painel` e `/setup`.', 
+                    ephemeral: true 
+                });
+            }
+
+            const sanitizedUsername = sanitizeUsername(interaction.user.username);
+            const ticketChannelName = `ticket-de-${sanitizedUsername}`;
+            
+            const existingChannel = interaction.guild.channels.cache.find(
+                ch => ch.name === ticketChannelName && ch.type === ChannelType.GuildText
+            );
+
+            if (existingChannel) {
+                return interaction.reply({ 
+                    content: `❌ Você já tem um ticket aberto: ${existingChannel}`, 
+                    ephemeral: true 
+                });
+            }
+
+            await interaction.reply({ 
+                content: `🎫 Criando seu ticket: **${buttonLabel}**...`, 
+                ephemeral: true 
+            });
+
+            try {
+                const permissionOverwrites = [
+                    {
+                        id: interaction.guild.roles.everyone.id,
+                        deny: [PermissionFlagsBits.ViewChannel]
+                    },
+                    {
+                        id: interaction.user.id,
+                        allow: [
+                            PermissionFlagsBits.ViewChannel, 
+                            PermissionFlagsBits.SendMessages, 
+                            PermissionFlagsBits.ReadMessageHistory
+                        ]
+                    }
+                ];
+
+                if (panelConfig.supportRoles && panelConfig.supportRoles.length > 0) {
+                    panelConfig.supportRoles.forEach(roleId => {
+                        permissionOverwrites.push({
+                            id: roleId,
+                            allow: [
+                                PermissionFlagsBits.ViewChannel, 
+                                PermissionFlagsBits.SendMessages, 
+                                PermissionFlagsBits.ReadMessageHistory
+                            ]
+                        });
+                    });
+                } else if (panelConfig.supportRoleId) {
+                    permissionOverwrites.push({
+                        id: panelConfig.supportRoleId,
+                        allow: [
+                            PermissionFlagsBits.ViewChannel, 
+                            PermissionFlagsBits.SendMessages, 
+                            PermissionFlagsBits.ReadMessageHistory
+                        ]
+                    });
+                }
+
+                const ticketChannel = await interaction.guild.channels.create({
+                    name: ticketChannelName,
+                    type: ChannelType.GuildText,
+                    parent: panelConfig.categoryId,
+                    permissionOverwrites: permissionOverwrites
+                });
+
+                const ticketEmbed = new EmbedBuilder()
+                    .setTitle(`🎫 Ticket: ${buttonLabel}`)
+                    .setDescription(
+                        `Olá ${interaction.user}, bem-vindo(a) ao seu ticket!\n\n` +
+                        `**Categoria:** ${buttonLabel}\n` +
+                        `**Painel:** ${panelConfig.name}\n\n` +
+                        `Um membro da equipe irá atendê-lo em breve.\n` +
+                        `Por favor, descreva o motivo da abertura deste ticket.`
+                    )
+                    .setColor(0x0099FF)
+                    .setFooter({ text: 'Powered by STG Store' })
+                    .setTimestamp();
+
+                const actionRow = new ActionRowBuilder()
+                    .addComponents(
+                        new ButtonBuilder()
+                            .setCustomId('reivindicar_ticket')
+                            .setLabel('Reivindicar')
+                            .setEmoji('✋')
+                            .setStyle(ButtonStyle.Primary),
+                        new ButtonBuilder()
+                            .setCustomId('fechar_ticket')
+                            .setLabel('Fechar Ticket')
+                            .setEmoji('🔒')
+                            .setStyle(ButtonStyle.Danger)
+                    );
+
+                await ticketChannel.send({ 
+                    content: `${interaction.user}`, 
+                    embeds: [ticketEmbed], 
+                    components: [actionRow] 
+                });
+
+                await interaction.followUp({ 
+                    content: `✅ Ticket criado com sucesso! ${ticketChannel}`, 
+                    ephemeral: true 
+                });
+
+                console.log(`✅ Ticket criado: ${ticketChannelName} por ${interaction.user.tag} - Painel: ${panelConfig.name} - Botão: ${buttonLabel}`);
+
+                if (panelConfig.logsChannelId) {
+                    const logsChannel = interaction.guild.channels.cache.get(panelConfig.logsChannelId);
+                    if (logsChannel) {
+                        const logEmbed = new EmbedBuilder()
+                            .setTitle('📂 Ticket Aberto')
+                            .setDescription(`**Usuário:** ${interaction.user} (${interaction.user.tag})\n**ID:** ${interaction.user.id}\n**Painel:** ${panelConfig.name}\n**Categoria:** ${buttonLabel}\n**Canal:** ${ticketChannel}\n**Horário:** <t:${Math.floor(Date.now() / 1000)}:F>`)
+                            .setColor(0x00FF00)
+                            .setFooter({ text: 'Powered by STG Store' })
+                            .setTimestamp();
+                        
+                        await logsChannel.send({ embeds: [logEmbed] }).catch(err => {
+                            console.error('❌ Erro ao enviar log de ticket aberto:', err);
+                        });
+                    }
+                }
+
+            } catch (error) {
+                console.error('❌ Erro ao criar ticket:', error);
+                return interaction.followUp({ 
+                    content: '❌ Erro ao criar o ticket. Verifique as permissões do bot.', 
+                    ephemeral: true 
+                });
+            }
+        }
         
         if (interaction.customId === 'reivindicar_ticket') {
             const channel = interaction.channel;
