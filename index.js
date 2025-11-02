@@ -330,7 +330,7 @@ client.on('interactionCreate', async interaction => {
                     '> Segunda a Sexta\n8:00h as 22:30h\n\n' +
                     '> Sábado e Domingo\n7:00h as 21:30h\n\n' +
                     '> **Caso envie mensagens fora do horário de atendimento, aguarde. Assim que um staff estiver disponível, irá lhe atender com o setor de atendimento selecionado. Por favor, evite menções e abrir ticket à toa sem precisar de suporte.**'
-                    '**Para que possamos iniciar o seu atendimento, selecione o setor desejado no menu abaixo.**
+                    '**Para que possamos iniciar o seu atendimento, selecione o setor desejado no menu abaixo.**'
                 )
                 .setColor(0x0099FF)
                 .setFooter({ text: 'Powered by STG Store' })
