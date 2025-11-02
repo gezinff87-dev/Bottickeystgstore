@@ -331,18 +331,6 @@ client.on('interactionCreate', async interaction => {
                     '> Sábado e Domingo\n7:00h as 21:30h\n\n' +
                     '> **Caso envie mensagens fora do horário de atendimento, aguarde. Assim que um staff estiver disponível, irá lhe atender com o setor de atendimento selecionado. Por favor, evite menções e abrir ticket à toa sem precisar de suporte.**'
                     '**Para que possamos iniciar o seu atendimento, selecione o setor desejado no menu abaixo.**
-'> **Temos As Seguintes Opções :**'
-
-'<a:Eclipse_seta_white:1419776702128717835> Dúvidas Esclarecer Dúvidas'
-    '-# esclarecer dúvidas'
-'<a:h19:1410393858105413732> Denunciar'
-'-# Denuncie Algum de scam , Roubo Etc'
-'<a:k101:1410649397255209070> Resgatar Algum Prêmio' 
-'-# Drops, sorteio Etc'
-'<:z71:1409046256830910465> Comprar'
-'-# Comprar Com donos Ou staffs'
-'<:p100:1410649710330515510> Fornecer Brainrot'
-'-# Fornecer Brainrot De Mais de 10m'
                 )
                 .setColor(0x0099FF)
                 .setFooter({ text: 'Powered by STG Store' })
