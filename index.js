@@ -1430,36 +1430,34 @@ client.on('interactionCreate', async interaction => {
                 });
 
                 const ticketEmbed = new EmbedBuilder()
-                    .setTitle(`🎫 Ticket: ${buttonLabel}`)
-                    .setDescription(
-                        `Olá ${interaction.user}, bem-vindo(a) ao seu ticket!\n\n` +
-                        `**Categoria:** ${buttonLabel}\n` +
-                        `**Painel:** ${panelConfig.name}\n\n` +
-                        `Um membro da equipe irá atendê-lo em breve.\n` +
-                        `Por favor, descreva o motivo da abertura deste ticket.`
-                    )
-                    .setColor(0x0099FF)
+                    .setTitle('🎫 Ticket Aberto')
+                    .setDescription(`Olá ${interaction.user}, bem-vindo ao seu ticket!\n\n**Painel:** ${panelConfig.name}\n**Setor selecionado:** ${buttonLabel}\n\nUm membro da equipe de suporte irá atendê-lo em breve.\n\n**Para fechar ou reivindicar este ticket, clique nos botões abaixo.**`)
+                    .setColor(0x00FF00)
                     .setFooter({ text: 'Powered by STG Store' })
                     .setTimestamp();
 
-                const actionRow = new ActionRowBuilder()
-                    .addComponents(
-                        new ButtonBuilder()
-                            .setCustomId('reivindicar_ticket')
-                            .setLabel('Reivindicar')
-                            .setEmoji('✋')
-                            .setStyle(ButtonStyle.Primary),
-                        new ButtonBuilder()
-                            .setCustomId('fechar_ticket')
-                            .setLabel('Fechar Ticket')
-                            .setEmoji('🔒')
-                            .setStyle(ButtonStyle.Danger)
-                    );
+                const claimButton = new ButtonBuilder()
+                    .setCustomId('reivindicar_ticket')
+                    .setLabel('Reivindicar Ticket')
+                    .setEmoji('✋')
+                    .setStyle(ButtonStyle.Success);
+
+                const closeButton = new ButtonBuilder()
+                    .setCustomId('fechar_ticket')
+                    .setLabel('Fechar Ticket')
+                    .setEmoji('🔒')
+                    .setStyle(ButtonStyle.Danger);
+
+                const row = new ActionRowBuilder().addComponents(claimButton, closeButton);
+
+                const mentionRoles = panelConfig.supportRoles && panelConfig.supportRoles.length > 0
+                    ? panelConfig.supportRoles.map(roleId => `<@&${roleId}>`).join(' ')
+                    : (panelConfig.supportRoleId ? `<@&${panelConfig.supportRoleId}>` : '');
 
                 await ticketChannel.send({ 
-                    content: `${interaction.user}`, 
+                    content: `${interaction.user}${mentionRoles ? ' | ' + mentionRoles : ''}`, 
                     embeds: [ticketEmbed], 
-                    components: [actionRow] 
+                    components: [row] 
                 });
 
                 await interaction.followUp({ 
